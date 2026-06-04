@@ -1032,7 +1032,8 @@ export const registerRoutes = async (
     gitHubAppDAL,
     appConnectionDAL,
     permissionService,
-    kmsService
+    kmsService,
+    keyStore
   });
 
   // ldapService is created after loginService (below) due to dependency on processProviderCallback
