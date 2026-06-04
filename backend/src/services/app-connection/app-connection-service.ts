@@ -184,7 +184,7 @@ export type TAppConnectionServiceFactoryDep = {
   projectDAL: Pick<TProjectDALFactory, "findProjectById">;
   appConnectionCredentialRotationService: TAppConnectionCredentialRotationServiceFactory;
   identityUaDAL: Pick<TIdentityUaDALFactory, "findOne">;
-  gitHubAppDAL: Pick<TGitHubAppDALFactory, "findOne">;
+  gitHubAppDAL: Pick<TGitHubAppDALFactory, "findOne" | "upsertConnectionLink">;
 };
 
 export type TAppConnectionServiceFactory = ReturnType<typeof appConnectionServiceFactory>;
@@ -585,6 +585,19 @@ export const appConnectionServiceFactory = ({
             );
           }
 
+          // Which GitHub App the connection references is mirrored from the encrypted credentials
+          // into github_app_connections so usage can be counted (and deletes blocked) without
+          // decrypting, and so the FK rejects creates racing an app deletion.
+          if (app === AppConnection.GitHub && method === GitHubConnectionMethod.App) {
+            await gitHubAppDAL.upsertConnectionLink(
+              {
+                appConnectionId: appConnection.id,
+                githubAppId: (connectionCredentials as { gitHubAppId?: string | null }).gitHubAppId ?? null
+              },
+              tx
+            );
+          }
+
           return appConnection;
         });
       };
@@ -617,6 +630,14 @@ export const appConnectionServiceFactory = ({
     } catch (err) {
       if (err instanceof DatabaseError && (err.error as { code: string })?.code === DatabaseErrorCode.UniqueViolation) {
         throw new BadRequestError({ message: `An App Connection with the name "${params.name}" already exists` });
+      }
+
+      if (
+        err instanceof DatabaseError &&
+        (err.error as { code: string })?.code === DatabaseErrorCode.ForeignKeyViolation
+      ) {
+        // the github_app_connections link FK — the referenced GitHub App was deleted concurrently
+        throw new BadRequestError({ message: "The selected GitHub App no longer exists. Please try again." });
       }
 
       throw err;
@@ -868,6 +889,18 @@ export const appConnectionServiceFactory = ({
           connection = await updateConnection(updatedCredentials, tx);
         }
 
+        // Keep the github_app_connections link in sync with the (re-validated) credentials — see
+        // the matching block in createAppConnection.
+        if (updatedCredentials && app === AppConnection.GitHub && method === GitHubConnectionMethod.App) {
+          await gitHubAppDAL.upsertConnectionLink(
+            {
+              appConnectionId: connectionId,
+              githubAppId: (updatedCredentials as { gitHubAppId?: string | null }).gitHubAppId ?? null
+            },
+            tx
+          );
+        }
+
         // Handle rotation updates
         if (isAutoRotationEnabled !== undefined || rotation) {
           if (isAutoRotationEnabled === false) {
@@ -932,6 +965,14 @@ export const appConnectionServiceFactory = ({
     } catch (err) {
       if (err instanceof DatabaseError && (err.error as { code: string })?.code === DatabaseErrorCode.UniqueViolation) {
         throw new BadRequestError({ message: `An App Connection with the name "${params.name}" already exists` });
+      }
+
+      if (
+        err instanceof DatabaseError &&
+        (err.error as { code: string })?.code === DatabaseErrorCode.ForeignKeyViolation
+      ) {
+        // the github_app_connections link FK — the referenced GitHub App was deleted concurrently
+        throw new BadRequestError({ message: "The selected GitHub App no longer exists. Please try again." });
       }
 
       throw err;
