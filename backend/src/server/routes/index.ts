@@ -1028,12 +1028,7 @@ export const registerRoutes = async (
     membershipGroupDAL
   });
 
-  const gitHubAppService = gitHubAppServiceFactory({
-    gitHubAppDAL,
-    permissionService,
-    kmsService,
-    keyStore
-  });
+  // gitHubAppService is created after gatewayPoolService (below) due to dependency on gateway services
 
   // ldapService is created after loginService (below) due to dependency on processProviderCallback
 
@@ -1649,6 +1644,18 @@ export const registerRoutes = async (
     pamDiscoverySourceDAL,
     appConnectionDAL,
     dynamicSecretDAL
+  });
+
+  const gitHubAppService = gitHubAppServiceFactory({
+    gitHubAppDAL,
+    permissionService,
+    kmsService,
+    keyStore,
+    licenseService,
+    gatewayService,
+    gatewayV2Service,
+    gatewayDAL,
+    gatewayV2DAL
   });
 
   const secretSyncQueue = secretSyncQueueFactory({
